@@ -76,7 +76,7 @@ func BuildMenu(
 			line := l // capture
 			display := line
 			if len(display) > 100 {
-				display = display[:100]
+				display = display
 			}
 			lineList.AddItem(display, "", 0, func() {
 				fields := strings.Fields(line)

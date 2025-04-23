@@ -38,6 +38,7 @@ func main() {
 		// zoom state
 		zoomed          bool
 		origRoot        tview.Primitive
+		currentPage     string
 	)
 
 	/* ────────── persistent widgets ────── */
@@ -114,13 +115,14 @@ func main() {
 		}
 		root.Clear().
 			AddItem(tabBar, 1, 0, false).
-			AddItem(pages, 0, 1, true).
+			AddItem(pages,  0, 1, true).
 			AddItem(footer, 3, 0, false)
 
-		// save unzoomed root once
+		// save original layout
 		if origRoot == nil {
 			origRoot = root
 		}
+		currentPage = "main"
 
 		focusables = []tview.Primitive{menuPages, output, input}
 		curFocus = 0
@@ -135,21 +137,31 @@ func main() {
 
 	/* ────────── Global keys ───────────── */
 	app.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		// zoom toggle on Ctrl+Z
+		// toggle zoom on Ctrl+Z
 		if ev.Key() == tcell.KeyCtrlZ {
 			if zoomed {
-				// unzoom
 				app.SetRoot(origRoot, true)
 				zoomed = false
-				app.SetFocus(output)
+				// restore focus
+				app.SetFocus(focusables[curFocus])
 			} else {
-				// zoom output only (above footer)
-				zoomedView := tview.NewFlex().SetDirection(tview.FlexRow).
-					AddItem(output, 0, 1, true).
+				var panel tview.Primitive
+				switch currentPage {
+				case "main":
+					panel = focusables[curFocus]
+				case "tails":
+					panel = tailView
+				case "proc":
+					panel = procView
+				case "conf":
+					panel = confPanel
+				}
+				zoomView := tview.NewFlex().SetDirection(tview.FlexRow).
+					AddItem(panel, 0, 1, true).
 					AddItem(footer, 3, 0, false)
-				app.SetRoot(zoomedView, true)
+				app.SetRoot(zoomView, true)
 				zoomed = true
-				app.SetFocus(output)
+				app.SetFocus(panel)
 			}
 			return nil
 		}
@@ -157,6 +169,7 @@ func main() {
 		if inForm {
 			return ev
 		}
+
 		switch ev.Key() {
 		case tcell.KeyTab:
 			curFocus = (curFocus + 1) % len(focusables)
@@ -172,6 +185,7 @@ func main() {
 			focusables = []tview.Primitive{menuPages, output, input}
 			curFocus = 0
 			app.SetFocus(menuPages)
+			currentPage = "main"
 			return nil
 		case tcell.KeyF2:
 			pages.SwitchToPage("tails")
@@ -181,6 +195,7 @@ func main() {
 				curFocus = 0
 				app.SetFocus(focusables[curFocus])
 			}
+			currentPage = "tails"
 			return nil
 		case tcell.KeyF3:
 			pages.SwitchToPage("proc")
@@ -190,6 +205,7 @@ func main() {
 				curFocus = 0
 				app.SetFocus(focusables[curFocus])
 			}
+			currentPage = "proc"
 			return nil
 		case tcell.KeyF4:
 			pages.SwitchToPage("conf")
@@ -197,6 +213,7 @@ func main() {
 			focusables = []tview.Primitive{confPanel}
 			curFocus = 0
 			app.SetFocus(confPanel)
+			currentPage = "conf"
 			return nil
 		}
 		return ev

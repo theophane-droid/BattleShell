@@ -6,15 +6,23 @@
       { "name": "Top 10 CPU",       "description": "Top CPU-hungry procs",                 "command": "ps -eo pid,comm,pcpu,pmem --sort=-pcpu | head -n 11" },
       { "name": "Find Susp PID",    "description": "grep in ps output",                    "command": "ps aux | grep '{pattern}'" }
     ],
-
     "submenus": [
-
       {
         "title": "Network",
         "commands": [
-          { "name": "Live Connex",  "description": "ss – listening & established",         "command": "ss -tunap" },
-          { "name": "Find Port",    "description": "search a port",                        "command": "ss -tunlp | grep '{port}'" },
-          { "name": "TCP Dump",     "description": "capture if->file (Ctrl-C to stop)",    "command": "tcpdump -ni '{iface}' -w /tmp/cap_{iface}.pcap" }
+          { "name": "Check http connexion",  "description": "curl",         "command": "curl -k {url}" },
+          { 
+            "name": "i - Live Connex",
+            "description": "ss – listening & established",
+            "command": "ss -tunap | sed -E 's/.*pid=([0-9]+).*/\\1 &/'",
+            "fields": ["PID"],
+            "select_actions": [
+              { "name": "Kill PID",       "template": "kill -9 {PID}" },
+              { "name": "LSOF",           "template": "lsof -p {PID}" },
+              { "name": "Connections",    "template": "ss -tunap | grep {PID}" }
+            ]
+          },
+          { "name": "Find Port",    "description": "search a port",                        "command": "ss -tunlp | grep '{port}'" }
         ]
       },
 
@@ -28,11 +36,53 @@
       },
 
       {
+        "title": "Systemctl / Services",
+        "commands": [
+          {
+            "name": "Running services",
+            "description": "systemctl running units",
+            "command": "systemctl list-units --type=service --state=running --no-pager | awk '{print $1}' | tail -n +2",
+            "fields": ["UNIT"],
+            "select_actions": [
+              { "name": "Stop",     "template": "sudo systemctl stop {UNIT}" },
+              { "name": "Start",    "template": "sudo systemctl start {UNIT}" },
+              { "name": "Restart",  "template": "sudo systemctl restart {UNIT}" },
+              { "name": "Enable",   "template": "sudo systemctl enable {UNIT}" },
+              { "name": "Disable",  "template": "sudo systemctl disable {UNIT}" },
+              { "name": "Status",   "template": "systemctl status {UNIT}" }
+            ]
+          },
+          {
+            "name": "Enabled at boot",
+            "description": "systemctl enabled services",
+            "command": "systemctl list-unit-files --type=service --state=enabled --no-pager | awk '{print $1}' | tail -n +2",
+            "fields": ["UNIT"],
+            "select_actions": [
+              { "name": "Disable",  "template": "sudo systemctl disable {UNIT}" },
+              { "name": "Mask",     "template": "sudo systemctl mask {UNIT}" },
+              { "name": "Status",   "template": "systemctl status {UNIT}" }
+            ]
+          }
+        ]
+      },
+
+      {
         "title": "Proc Actions",
         "commands": [
-          { "name": "Kill PID",     "description": "SIGKILL a pid",                        "command": "sudo kill -9 {pid}" },
-          { "name": "Kill by name", "description": "pkill exact name",                     "command": "sudo pkill -9 '{procname}'" },
-          { "name": "Open files",   "description": "lsof for pid",                         "command": "sudo lsof -p {pid}" }
+          {
+            "name": "Filter Processes",
+            "description": "grep by pattern & select action",
+            "command": "ps aux | grep '{pattern}'",
+            "fields": ["USER", "PID", "COMMAND"],
+            "select_actions": [
+              { "name": "Kill PID",       "template": "kill -9 {PID}" },
+              { "name": "LSOF",           "template": "lsof -p {PID}" },
+              { "name": "Connections",    "template": "ss -tunap | grep {PID}" }
+            ]
+          },
+          { "name": "Kill PID",     "description": "SIGKILL a pid",                        "command": "kill -9 {pid}" },
+          { "name": "Kill by name", "description": "pkill exact name",                     "command": "pkill -9 '{procname}'" },
+          { "name": "Open files",   "description": "lsof for pid",                         "command": "lsof -p {pid}" }
         ]
       },
 
@@ -40,23 +90,90 @@
         "title": "Docker",
         "commands": [
           {
-            "name": "List containers",
+            "name": "i - Access containers",
             "description": "select a container",
             "command": "docker ps -a",
-            "fields": ["ID","Image","Names"],
+            "fields": ["ID", "Image", "Names"],
             "select_actions": [
-              { "name":"Logs","template":"docker logs -f {ID}" },
-              { "name":"Inspect","template":"docker inspect {ID}" }
+              { "name": "Logs",    "template": "docker logs -f {ID} | tail" },
+              { "name": "Inspect", "template": "docker inspect {ID}" },
+              { "name": "Start",   "template": "docker start {ID}" },
+              { "name": "Stop",    "template": "docker stop {ID}" },
+              { "name": "Restart", "template": "docker restart {ID}" },
+              { "name": "Kill",    "template": "docker kill {ID}" },
+              { "name": "Exec",    "template": "docker exec -it {ID} /bin/sh" }
+            ]
+          }
+        ]
+      },
+
+      {
+        "title": "Blue Team Tools",
+        "commands": [
+          {
+            "name": "Who / Last",
+            "description": "current & last logins",
+            "command": "who; last -n 20",
+            "fields": ["USER","LINE","LOGIN","PID"],
+            "select_actions": [
+              { "name": "Kill Session",   "template": "kill -9 {PID}" }
             ]
           },
-          { "name": "Exec sh",              "description": "attach to container",          "command": "docker exec -it {container_id} /bin/sh" },
-          { "name": "Stop container",       "description": "docker stop",                  "command": "docker stop {container_id}" },
-          { "name": "Logs container",       "description": "live logs",                    "command": "docker logs -f {container_id}" }
+          {
+            "name": "Failed logins",
+            "description": "lastb -n 30",
+            "command": "lastb -n 30",
+            "fields": [],
+            "select_actions": []
+          },
+          {
+            "name": "Type binary",
+            "description": "file type",
+            "command": "file $(which {binary})",
+            "fields": [],
+            "select_actions": []
+          },
+          {
+            "name": "Kernel modules",
+            "description": "lsmod",
+            "command": "lsmod | tail -n +2",
+            "fields": ["MODULE"],
+            "select_actions": [
+              { "name": "Unload",         "template": "sudo modprobe -r {MODULE}" }
+            ]
+          },
+          {
+            "name": "Cron jobs",
+            "description": "crontab -l -u {user}",
+            "command": "crontab -l -u {user}",
+            "fields": [],
+            "select_actions": []
+          },
+          {
+            "name": "Iftop",
+            "description": "bande passante live",
+            "command": "iftop -nNP",
+            "fields": [],
+            "select_actions": []
+          },
+          {
+            "name": "Routes",
+            "description": "ip route & rule",
+            "command": "ip route; ip rule",
+            "fields": [],
+            "select_actions": []
+          },
+          {
+            "name": "Kernel logs",
+            "description": "dmesg -T",
+            "command": "dmesg -T | tail -n 50",
+            "fields": [],
+            "select_actions": []
+          }
         ]
       }
     ]
   },
-
   "tail_files": [
     "/var/log/syslog",
     "/var/log/auth.log",
@@ -64,8 +181,8 @@
   ],
 
   "processes": [
-    { "name": "SSH brute?",  "command": "grep -c 'Failed password' /var/log/auth.log", "interval_seconds": 30 },
-    { "name": "Susp Port 4444", "command": "ss -tunlp | grep 4444", "interval_seconds": 3 },
-    { "name": "Just printing date", "command": "date''", "interval_seconds": 3 }
+    { "name": "SSH brute?",        "command": "grep -c 'Failed password' /var/log/auth.log", "interval_seconds": 30 },
+    { "name": "Susp Port 4444",    "command": "ss -tunlp | grep 4444",                      "interval_seconds": 3 },
+    { "name": "Just printing date", "command": "date",                                        "interval_seconds": 3 }
   ]
 }
