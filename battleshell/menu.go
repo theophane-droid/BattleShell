@@ -9,7 +9,10 @@ import (
 
 var argRegex = regexp.MustCompile(`\{([^}]+)\}`)
 
-func BuildMenu(app *tview.Application, pages *tview.Pages, cfg MenuConfig, output *tview.TextView, rootMenu *tview.Primitive, isRoot bool) tview.Primitive {
+func BuildMenu(app *tview.Application, pages *tview.Pages,
+	cfg MenuConfig, output *tview.TextArea,
+	rootMenu *tview.Primitive, isRoot bool,
+	inFormFlag *bool) tview.Primitive {
 	list := tview.NewList()
 	list.ShowSecondaryText(false).
 		SetBorder(true).
@@ -55,10 +58,12 @@ func BuildMenu(app *tview.Application, pages *tview.Pages, cfg MenuConfig, outpu
 						final = strings.ReplaceAll(final, "{"+k+"}", v)
 					}
 					pages.RemovePage("args"); ExecuteCommand(final, output)
+					*inFormFlag = false
 					app.SetFocus(list)
 				})
-				form.AddButton("Cancel", func() { pages.RemovePage("args"); app.SetFocus(list) })
+				form.AddButton("Cancel", func() { pages.RemovePage("args"); app.SetFocus(list); *inFormFlag = false })
 				form.SetBorder(true).SetTitle(" Arguments ")
+				*inFormFlag = true
 				pages.AddAndSwitchToPage("args", form, true)
 				app.SetFocus(form)
 				return
@@ -71,7 +76,7 @@ func BuildMenu(app *tview.Application, pages *tview.Pages, cfg MenuConfig, outpu
 		sub := sub
 		sc := nextShortcut()
 		list.AddItem(sub.Title, "", sc, func() {
-			submenu := BuildMenu(app, pages, sub, output, rootMenu, false)
+			submenu := BuildMenu(app, pages, sub, output, rootMenu, false, inFormFlag)
 			pages.AddAndSwitchToPage(sub.Title, submenu, true)
 			app.SetFocus(submenu)
 		})

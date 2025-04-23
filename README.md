@@ -35,11 +35,11 @@ A terminal-based TUI to organize and launch your favorite bash commands with:
 2. Build:  
    ```bash
    go get ./...
-   go build -o battle-shell main.go config.go menu.go tail.go processes.go ui.go utils.go
+   go build -o battleshell.bin main.go
    ```
 3. Run:  
    ```bash
-   ./battle-shell
+   ./battleshell.bin
    ```
 
 ---

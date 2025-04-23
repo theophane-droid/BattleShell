@@ -14,19 +14,17 @@ var bashPath = "/bin/bash"
 // Helpers
 // ------------------------------------------------------------------
 
-func ExecuteCommand(cmd string, out *tview.TextView) {
-	out.Clear()
-	out.Write([]byte(fmt.Sprintf("$ %s -c \"%s\"\n", bashPath, cmd)))
+func ExecuteCommand(cmd string, out *tview.TextArea) {
+	header := fmt.Sprintf("$ %s -c \"%s\"\n", bashPath, cmd)
 
 	res, err := exec.Command(bashPath, "-c", cmd).CombinedOutput()
 	if err != nil {
-		out.Write([]byte(fmt.Sprintf("Erreur: %v\n%s\n", err, res)))
+		out.SetText(header+"Error:\n"+err.Error()+"\n"+string(res), true) // true = autoscroll
 		return
 	}
-	out.Write(res)
-	out.Write([]byte("\n"))
-}
 
+	out.SetText(header+string(res), true)
+}
 // ------------------------------------------------------------------
 // Process watchers
 // ------------------------------------------------------------------
@@ -65,4 +63,13 @@ func StartProcessWatchers(cfg []ProcessConfig, buf int) (events <-chan ProcEvent
 	}
 
 	return ch, stop
+}
+
+func IsFormChild(p tview.Primitive) bool {
+	switch p.(type) {
+	case *tview.InputField, *tview.Button, *tview.DropDown, *tview.Checkbox:
+		return true
+	default:
+		return false
+	}
 }
