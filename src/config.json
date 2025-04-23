@@ -1,0 +1,57 @@
+{
+  "menu": {
+    "title": "Battle Shell",
+    "commands": [
+      {
+        "name": "List Files",
+        "description": "Liste les fichiers",
+        "command": "ls -l"
+      },
+      {
+        "name": "Sys Info",
+        "description": "Infos système",
+        "command": "uname -a"
+      },
+      {
+        "name": "Net Config",
+        "description": "Configuration réseau",
+        "command": "ip a"
+      }
+    ],
+    "submenus": [
+      {
+        "title": "Network Tools",
+        "commands": [
+          {
+            "name": "Ping Google",
+            "description": "ping google.com",
+            "command": "ping -c3 google.com"
+          },
+          {
+            "name": "Check Port 80",
+            "description": "nc -zv localhost 80",
+            "command": "nc -zv localhost 80"
+          }
+        ],
+        "submenus": null
+      },
+      {
+        "title": "File Ops",
+        "commands": [
+          {
+            "name": "Temp File",
+            "description": "crée un fichier temporaire",
+            "command": "touch /tmp/temp_file"
+          },
+          {
+            "name": "Last Log",
+            "description": "affiche les 10 dernières lignes du syslog",
+            "command": "tail -n10 /var/log/syslog"
+          }
+        ],
+        "submenus": null
+      }
+    ]
+  },
+  "tail_files": ["/home/analyste/lockedshields_25/log"]
+}
