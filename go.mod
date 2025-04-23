@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
 	github.com/gdamore/tcell v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect

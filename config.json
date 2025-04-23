@@ -6,10 +6,12 @@
       { "name": "Top 10 CPU",       "description": "Top CPU-hungry procs",                 "command": "ps -eo pid,comm,pcpu,pmem --sort=-pcpu | head -n 11" },
       { "name": "Find Susp PID",    "description": "grep in ps output",                    "command": "ps aux | grep '{pattern}'" }
     ],
+
     "submenus": [
       {
         "title": "Network",
         "commands": [
+          { "name": "Check tcp connexion",  "description": "nc - port",         "command": "nc {host} {port}" },
           { "name": "Check http connexion",  "description": "curl",         "command": "curl -k {url}" },
           { 
             "name": "i - Live Connex",
@@ -171,6 +173,59 @@
             "select_actions": []
           }
         ]
+      },
+
+      {
+        "title": "Firewall",
+        "commands": [
+          {
+            "name": "List nft blocks",
+            "description": "show nft drop rules",
+            "command": "nft list ruleset | grep 'drop'",
+            "fields": [],
+            "select_actions": []
+          },
+          {
+            "name": "Init nft table",
+            "description": "prepare for future block",
+            "command": "sudo nft add table inet filter; sudo nft add chain inet filter input '{ type filter hook input priority 0; policy accept; }'"
+          },          
+          {
+            "name": "Block IP (nft)",
+            "description": "add drop rule",
+            "command": "sudo nft add rule inet filter input ip saddr {ip} drop",
+            "fields": ["ip"],
+            "select_actions": []
+          },
+          {
+            "name": "Unblock IP (nft)",
+            "description": "delete drop rule",
+            "command": "sudo nft delete rule inet filter input ip saddr {ip} drop",
+            "fields": ["ip"],
+            "select_actions": []
+          },
+          {
+            "name": "List iptables blocks",
+            "description": "show DROP rules",
+            "command": "sudo iptables -L INPUT -v -n | grep DROP",
+            "fields": [],
+            "select_actions": []
+          },
+          {
+            "name": "Block IP (iptables)",
+            "description": "drop IP",
+            "command": "sudo iptables -I INPUT -s {ip} -j DROP",
+            "fields": ["ip"],
+            "select_actions": []
+          },
+          {
+            "name": "Unblock IP (iptables)",
+            "description": "remove DROP rule",
+            "command": "sudo iptables -D INPUT -s {ip} -j DROP",
+            "fields": ["ip"],
+            "select_actions": []
+          }
+        ]
       }
     ]
   },
@@ -179,7 +234,6 @@
     "/var/log/auth.log",
     "/var/lib/docker/containers/{container_id}/*-json.log"
   ],
-
   "processes": [
     { "name": "SSH brute?",        "command": "grep -c 'Failed password' /var/log/auth.log", "interval_seconds": 30 },
     { "name": "Susp Port 4444",    "command": "ss -tunlp | grep 4444",                      "interval_seconds": 3 },

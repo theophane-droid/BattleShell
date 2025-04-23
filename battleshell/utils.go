@@ -1,42 +1,57 @@
 package battleshell
 
 import (
+	"bufio"
 	"context"
 	"fmt"
-	"os/exec"
 	"io"
-	"bufio"
-	"time"
-	"github.com/rivo/tview"
+	"os/exec"
+	"strings"
 	"sync"
+	"time"
+
+	"github.com/creack/pty"
+	"github.com/rivo/tview"
 )
 
-var bashPath = "/bin/bash"
+/* ----------------------------------------------------------- */
+/*                   Streaming  +  Process kill                */
+/* ----------------------------------------------------------- */
 
-// ---
 var (
+	bashPath = "/bin/bash"
+
 	muCurrent sync.Mutex
 	curCmd    *exec.Cmd // commande en cours (nil si aucune)
 )
 
-/* ────────── exécution ────────── */
+/* commandes qui exigent un TTY (nc, ssh, ftp, mysql, …) */
+func interactive(cmd string) bool {
+	kw := []string{"nc ", "ssh ", "ftp ", "mysql ", "psql "}
+	for _, k := range kw {
+		if strings.Contains(cmd, k) {
+			return true
+		}
+	}
+	return false
+}
 
+/* Exécute une commande ; si interactive ⇒ pty, sinon pipes. */
 func ExecuteCommand(
 	cmdLine string,
 	out *tview.TextArea,
 	app *tview.Application,
-	async ...bool, // true par défaut
+	async ...bool,
 ) {
-
 	runAsync := true
 	if len(async) == 1 {
 		runAsync = async[0]
 	}
 
-	/* —— 1. Arrêter l’éventuelle commande active ——— */
+	/* 1. stop previous */
 	muCurrent.Lock()
 	if curCmd != nil && curCmd.Process != nil {
-		_ = curCmd.Process.Kill() // SIGKILL; on pourrait envoyer SIGINT sous Unix
+		_ = curCmd.Process.Kill()
 	}
 	muCurrent.Unlock()
 
@@ -46,39 +61,62 @@ func ExecuteCommand(
 	run := func() {
 		cmd := exec.Command(bashPath, "-c", cmdLine)
 
-		// mémoriser comme “courant”
 		muCurrent.Lock()
 		curCmd = cmd
 		muCurrent.Unlock()
+		fmt.Println(cmdLine)
+		if true {
+			ptmx, _ := pty.Start(cmd)
+			buf := make([]byte, 4096)
 
-		stdout, _ := cmd.StdoutPipe()
-		stderr, _ := cmd.StderrPipe()
-		_ = cmd.Start()
-
-		reader := bufio.NewReader(io.MultiReader(stdout, stderr))
-
-		for {
-			chunk, err := reader.ReadString('\n') // lit jusqu’au \n OU EOF
-			if len(chunk) > 0 {
-				app.QueueUpdateDraw(func() {
-					prev := out.GetText() // false = ne récupère pas les tags
-					out.SetText(prev+chunk, true)
-				})
-			}
-			if err != nil { // EOF ou erreur
-				if err != io.EOF {
+			for {
+				n, err := ptmx.Read(buf)
+				if n > 0 {
+					chunk := string(buf[:n])
 					app.QueueUpdateDraw(func() {
-						prev := out.GetText()
-						out.SetText(prev+"\nError: "+err.Error()+"\n", true)
+						prev:= out.GetText()
+						out.SetText(prev+chunk, true)
 					})
 				}
-				break
+				if err != nil {
+					break
+				}
 			}
+			_ = cmd.Wait()
+			_ = ptmx.Close()
+
+		} else {
+			/* ----------- non-interactive ---------- */
+			stdout, _ := cmd.StdoutPipe()
+			stderr, _ := cmd.StderrPipe()
+			_ = cmd.Start()
+
+			reader := bufio.NewReader(io.MultiReader(stdout, stderr))
+			buf := make([]byte, 4096)
+
+			for {
+				n, err := reader.Read(buf)
+				if n > 0 {
+					chunk := string(buf[:n])
+					app.QueueUpdateDraw(func() {
+						prev:= out.GetText()
+						out.SetText(prev+chunk, true)
+					})
+				}
+				if err != nil {
+					if err != io.EOF {
+						app.QueueUpdateDraw(func() {
+							prev := out.GetText()
+							out.SetText(prev+"\nError: "+err.Error()+"\n", true)
+						})
+					}
+					break
+				}
+			}
+			_ = cmd.Wait()
 		}
 
-		_ = cmd.Wait()
-
-		/* nettoyer curCmd */
+		/* cleanup */
 		muCurrent.Lock()
 		if curCmd == cmd {
 			curCmd = nil
@@ -92,14 +130,15 @@ func ExecuteCommand(
 		run()
 	}
 }
-// ------------------------------------------------------------------
-// Process watchers
-// ------------------------------------------------------------------
+
+/* ----------------------------------------------------------- */
+/*                    Process watchers                         */
+/* ----------------------------------------------------------- */
 
 type ProcEvent struct {
-	Index  int    // process index
-	Output []byte // last stdout/stderr
-	Error  error  // nil if OK
+	Index  int
+	Output []byte
+	Error  error
 }
 
 func StartProcessWatchers(cfg []ProcessConfig, buf int) (events <-chan ProcEvent, cancel func()) {
@@ -120,8 +159,7 @@ func StartProcessWatchers(cfg []ProcessConfig, buf int) (events <-chan ProcEvent
 					select {
 					case ch <- ProcEvent{Index: idx, Output: out, Error: err}:
 					default:
-						// si le buffer est plein on droppe l'event le plus ancien
-						<-ch
+						<-ch // drop oldest
 						ch <- ProcEvent{Index: idx, Output: out, Error: err}
 					}
 				}
@@ -131,6 +169,10 @@ func StartProcessWatchers(cfg []ProcessConfig, buf int) (events <-chan ProcEvent
 
 	return ch, stop
 }
+
+/* ----------------------------------------------------------- */
+/*                  Helpers Tview                              */
+/* ----------------------------------------------------------- */
 
 func IsFormChild(p tview.Primitive) bool {
 	switch p.(type) {
