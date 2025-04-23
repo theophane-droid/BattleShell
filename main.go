@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -9,7 +10,7 @@ import (
 	"github.com/theophane-droid/battleshell/battleshell"
 )
 
-var inForm bool 
+var inForm bool
 
 func main() {
 	app := tview.NewApplication()
@@ -20,39 +21,38 @@ func main() {
 
 	/* ────────── shared vars ───────────── */
 	var (
-		rootMenu tview.Primitive
-
-		menuPages *tview.Pages
-		tailView  tview.Primitive
-		procView  tview.Primitive
-		procList tview.Primitive
-		confPanel tview.Primitive
-		mainView  tview.Primitive
-		pages     *tview.Pages
-		root      *tview.Flex
-
-		focusables []tview.Primitive
-		curFocus   int
-
-		procEvents     <-chan battleshell.ProcEvent
+		rootMenu      tview.Primitive
+		menuPages     *tview.Pages
+		tailView      tview.Primitive
+		procView      tview.Primitive
+		procList      tview.Primitive
+		confPanel     tview.Primitive
+		mainView      tview.Primitive
+		pages         *tview.Pages
+		root          *tview.Flex
+		focusables    []tview.Primitive
+		curFocus      int
+		procEvents    <-chan battleshell.ProcEvent
 		cancelWatchers func()
-
 		reloadEverything func()
 	)
 
 	/* ────────── persistent widgets ────── */
 	output := tview.NewTextArea()
-	output.SetText("", true)
-	output.SetBorder(true).SetTitle(" Output ")
+	output.SetText("", true).
+		SetBorder(true).
+		SetTitle(" Output ")
 
 	input := tview.NewInputField()
-	input.SetLabel("> ").SetFieldWidth(0).
-		SetBorder(true).SetTitle(" Shell Input ")
+	input.SetLabel("> ").
+		SetFieldWidth(0).
+		SetBorder(true).
+		SetTitle(" Shell Input ")
 	input.SetDoneFunc(func(k tcell.Key) {
 		if k == tcell.KeyEnter {
 			cmd := input.GetText()
 			input.SetText("")
-			battleshell.ExecuteCommand(cmd, output)
+			battleshell.ExecuteCommand(cmd, output, app)
 		}
 	})
 
@@ -64,11 +64,20 @@ func main() {
 
 		cfg, err := battleshell.LoadConfig("config.json")
 		if err != nil {
-			app.SetRoot(
-				tview.NewModal().
-					SetText("Invalid config.json:\n\n"+err.Error()).
-					AddButtons([]string{"OK"}),
-				true)
+			inForm = true
+			modal := tview.NewModal().
+				SetText("Invalid config.json:\n\n" + err.Error()).
+				AddButtons([]string{"OK"}).
+				SetDoneFunc(func(_ int, _ string) {
+					inForm = false
+					// Ferme l'application proprement
+					app.Stop()
+					os.Exit(1)
+				}).
+				SetFocus(0)
+
+			app.SetRoot(modal, true)
+			app.SetFocus(modal)
 			return
 		}
 
@@ -77,25 +86,27 @@ func main() {
 		/* rebuild MAIN page */
 		rootMenu = nil
 		menuPages = tview.NewPages()
-		mainMenu  := battleshell.BuildMenu(app, menuPages, cfg.Menu, output, &rootMenu, true, &inForm)
+		mainMenu := battleshell.BuildMenu(app, menuPages, cfg.Menu, output, &rootMenu, true, &inForm)
 		menuPages.AddPage("main", mainMenu, true, true)
 
 		mainView = tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(tview.NewFlex().
-				AddItem(menuPages, 0, 1, true).
-				AddItem(output,     0, 2, false), 0, 1, true).
+			AddItem(
+				tview.NewFlex().
+					AddItem(menuPages, 0, 1, true).
+					AddItem(output, 0, 2, false),
+				0, 1, true).
 			AddItem(input, 3, 0, false)
 
 		/* rebuild other pages */
-		tailView           = battleshell.BuildTailView(app, cfg.TailFiles)
+		tailView = battleshell.BuildTailView(app, cfg.TailFiles)
 		procList, procView = battleshell.NewProcessPanel(app, cfg.Processes, procEvents)
-		confPanel          = battleshell.NewConfigEditor(app, "config.json", reloadEverything)
+		confPanel = battleshell.NewConfigEditor(app, "config.json", reloadEverything)
 
 		pages = tview.NewPages().
-			AddPage("main",  mainView, true,  true).
-			AddPage("tails", tailView, true,  false).
-			AddPage("proc",  procView, true,  false).
-			AddPage("conf",  confPanel, true, false)
+			AddPage("main", mainView, true, true).
+			AddPage("tails", tailView, true, false).
+			AddPage("proc", procView, true, false).
+			AddPage("conf", confPanel, true, false)
 
 		if root == nil {
 			root = tview.NewFlex().SetDirection(tview.FlexRow)
@@ -106,7 +117,7 @@ func main() {
 			AddItem(footer, 3, 0, false)
 
 		focusables = []tview.Primitive{menuPages, output, input}
-		curFocus   = 0
+		curFocus = 0
 
 		app.SetRoot(root, true)
 		app.SetFocus(focusables[curFocus])
@@ -118,10 +129,10 @@ func main() {
 
 	/* ────────── Global keys ───────────── */
 	app.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if inForm {          // laisser TAB interne au form
+		if inForm { // laisser TAB interne au form
 			return ev
 		}
-	
+
 		switch ev.Key() {
 		case tcell.KeyTab:
 			curFocus = (curFocus + 1) % len(focusables)
@@ -163,11 +174,9 @@ func main() {
 			curFocus = 0
 			app.SetFocus(confPanel)
 			return nil
-		/* …F1 / F2 / F3 / F4 inchangés… */
 		}
 		return ev
 	})
-	
 
 	if root != nil {
 		app.SetRoot(root, true)
@@ -175,9 +184,4 @@ func main() {
 	if err := app.EnableMouse(false).Run(); err != nil {
 		log.Fatal(err)
 	}
-	
-	/* run */
-	// if err := app.SetRoot(root, true).EnableMouse(false).Run(); err != nil {
-	// 	log.Fatal(err)
-	// }
 }

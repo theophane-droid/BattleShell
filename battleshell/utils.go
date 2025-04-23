@@ -4,26 +4,93 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"io"
+	"bufio"
 	"time"
 	"github.com/rivo/tview"
+	"sync"
 )
 
 var bashPath = "/bin/bash"
 
-// ------------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------------
+// ---
+var (
+	muCurrent sync.Mutex
+	curCmd    *exec.Cmd // commande en cours (nil si aucune)
+)
 
-func ExecuteCommand(cmd string, out *tview.TextArea) {
-	header := fmt.Sprintf("$ %s -c \"%s\"\n", bashPath, cmd)
+/* ────────── exécution ────────── */
 
-	res, err := exec.Command(bashPath, "-c", cmd).CombinedOutput()
-	if err != nil {
-		out.SetText(header+"Error:\n"+err.Error()+"\n"+string(res), true) // true = autoscroll
-		return
+func ExecuteCommand(
+	cmdLine string,
+	out *tview.TextArea,
+	app *tview.Application,
+	async ...bool, // true par défaut
+) {
+
+	runAsync := true
+	if len(async) == 1 {
+		runAsync = async[0]
 	}
 
-	out.SetText(header+string(res), true)
+	/* —— 1. Arrêter l’éventuelle commande active ——— */
+	muCurrent.Lock()
+	if curCmd != nil && curCmd.Process != nil {
+		_ = curCmd.Process.Kill() // SIGKILL; on pourrait envoyer SIGINT sous Unix
+	}
+	muCurrent.Unlock()
+
+	header := fmt.Sprintf("$ %s -c \"%s\"\n", bashPath, cmdLine)
+	out.SetText(header, true)
+
+	run := func() {
+		cmd := exec.Command(bashPath, "-c", cmdLine)
+
+		// mémoriser comme “courant”
+		muCurrent.Lock()
+		curCmd = cmd
+		muCurrent.Unlock()
+
+		stdout, _ := cmd.StdoutPipe()
+		stderr, _ := cmd.StderrPipe()
+		_ = cmd.Start()
+
+		reader := bufio.NewReader(io.MultiReader(stdout, stderr))
+
+		for {
+			chunk, err := reader.ReadString('\n') // lit jusqu’au \n OU EOF
+			if len(chunk) > 0 {
+				app.QueueUpdateDraw(func() {
+					prev := out.GetText() // false = ne récupère pas les tags
+					out.SetText(prev+chunk, true)
+				})
+			}
+			if err != nil { // EOF ou erreur
+				if err != io.EOF {
+					app.QueueUpdateDraw(func() {
+						prev := out.GetText()
+						out.SetText(prev+"\nError: "+err.Error()+"\n", true)
+					})
+				}
+				break
+			}
+		}
+
+		_ = cmd.Wait()
+
+		/* nettoyer curCmd */
+		muCurrent.Lock()
+		if curCmd == cmd {
+			curCmd = nil
+		}
+		muCurrent.Unlock()
+	}
+
+	if runAsync {
+		go run()
+	} else {
+		run()
+	}
 }
 // ------------------------------------------------------------------
 // Process watchers

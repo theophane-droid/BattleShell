@@ -8,10 +8,12 @@ import (
 	"github.com/rivo/tview"
 )
 
-var argRegex = regexp.MustCompile(`\\{([^}]+)\\}`)
+/* ---------- CORRECTION : expression régulière ------------- */
+/* simple échappement (« \{ »), pas double                    */
+var argRegex = regexp.MustCompile(`\{([^}]+)\}`)
 
 // BuildMenu construit récursivement un menu avec exécution de commandes
-// (simples, à arguments, ou avec SelectActions).
+// (simples, à arguments nommés, ou avec SelectActions).
 func BuildMenu(
 	app *tview.Application,
 	pages *tview.Pages,
@@ -59,10 +61,9 @@ func BuildMenu(
 			return
 		}
 
-		/* ------ SelectActions : remplacer le menu ----- */
+		/* ------ SelectActions : liste des lignes -------------- */
 		lines := strings.Split(strings.TrimSpace(outText), "\n")
 
-		/* sauvegarde du menu courant pour pouvoir revenir */
 		prevPage := "main"
 		pages.HidePage(prevPage)
 
@@ -71,7 +72,6 @@ func BuildMenu(
 			SetBorder(true).
 			SetTitle(" Select line ")
 
-		/* items des lignes */
 		for _, l := range lines {
 			line := l // capture
 			display := line
@@ -101,25 +101,22 @@ func BuildMenu(
 						app.SetFocus(lineList)
 						pages.RemovePage("actions_modal")
 
-						/* Back */
 						if label == "Back" || ix >= len(cmdCfg.SelectActions) {
 							return
 						}
-
 						act := cmdCfg.SelectActions[ix]
 						final := act.Template
 						for k, v := range vals {
 							final = strings.ReplaceAll(final, "{"+k+"}", v)
 						}
 						output.SetText("", true)
-						ExecuteCommand(final, output)
+						ExecuteCommand(final, output, app)
 					})
 
 				pages.AddPage("actions_modal", modal, true, true)
 			})
 		}
 
-		/* bouton retour vers le menu principal */
 		lineList.AddItem("← Back to menu", "", 'b', func() {
 			pages.RemovePage("line_selector")
 			pages.ShowPage(prevPage)
@@ -138,22 +135,25 @@ func BuildMenu(
 		list.AddItem(cmd.Name, cmd.Description, sc, func() {
 			tmpl := cmd.Command
 
-			/* ---- arguments positionnels ? ---- */
+			/* ---- arguments nommés ? ---- */
 			if m := argRegex.FindAllStringSubmatch(tmpl, -1); len(m) > 0 {
 				seen := map[string]bool{}
 				var names []string
-				for _, s := range m {
-					if !seen[s[1]] {
-						seen[s[1]] = true
-						names = append(names, s[1])
+				for _, sub := range m {
+					if !seen[sub[1]] {
+						seen[sub[1]] = true
+						names = append(names, sub[1])
 					}
 				}
+
 				vals := map[string]string{}
 				form := tview.NewForm()
 				for _, n := range names {
-					n := n
-					form.AddInputField(n, "", 20, nil, func(t string) { vals[n] = t })
+					argName := n // capture
+					form.AddInputField(argName, "", 20, nil,
+						func(text string) { vals[argName] = text })
 				}
+
 				form.AddButton("Run", func() {
 					final := tmpl
 					for k, v := range vals {
@@ -164,11 +164,13 @@ func BuildMenu(
 					*inFormFlag = false
 					runCmd(final, cmd)
 				})
+
 				form.AddButton("Cancel", func() {
 					app.SetFocus(list)
 					pages.RemovePage("args")
 					*inFormFlag = false
 				})
+
 				form.SetBorder(true).SetTitle(" Arguments ")
 				*inFormFlag = true
 				pages.AddAndSwitchToPage("args", form, true)
@@ -196,7 +198,8 @@ func BuildMenu(
 	list.AddItem("⚙ Setup", "Customize shell path", 's', func() {
 		*inFormFlag = true
 		form := tview.NewForm().
-			AddInputField("Bash path", bashPath, 40, nil, func(t string) { bashPath = t }).
+			AddInputField("Bash path", bashPath, 40, nil,
+				func(text string) { bashPath = text }).
 			AddButton("Save", func() {
 				app.SetFocus(list)
 				pages.RemovePage("setup")
