@@ -1,17 +1,27 @@
 # Battle Shell 🚀
 
-A terminal-based UI to organize and launch your favorite bash commands with menus, sub-menus and dynamic arguments!
+A terminal-based TUI to organize and launch your favorite bash commands with:
+
+- configurable menus & sub-menus  
+- dynamic argument prompts  
+- built-in shell input  
+- file-tail viewer  
+- background process watchers  
 
 ---
 
 ## 🔥 Features
 
-- 🎛️ **Configurable menus & sub-menus** via `config.json`  
-- ⚙️ **Setup** screen to customize your shell path (`bashPath`)  
-- 📝 **Placeholders** `{arg}` prompt you for values before running  
-- 🧹 **Auto-clear** output panel before each run  
+- 🎛️ **Menus & Sub-menus** defined in `config.json`  
+- ⚙️ **Setup** screen to change your shell path (`bashPath`)  
+- 📝 **Named placeholders** `{arg}` prompt you for values before execution  
+- 💻 **Free shell input** panel to run any bash command  
+- 🧹 **Auto-clear** output before each run  
+- 📜 **Tail view** to follow log files with live refresh  
+- ⏱️ **Process watchers** that run commands periodically in background, color-coded by status  
+- 🔢 **Auto-assigned shortcuts** `1…9,0` (AZERTY-aware) for menu items  
 - ❌ **Exit** button (or `q`) to quit cleanly  
-- Automatic generation of `config.json` with default menu
+- Automatic generation of a default `config.json` on first run  
 
 ---
 
@@ -19,16 +29,16 @@ A terminal-based UI to organize and launch your favorite bash commands with menu
 
 1. Clone the repo:  
    ```bash
-   git clone https://your-repo.git
-   cd battle-shell/src
+   git clone https://github.com/your-org/battle-shell.git
+   cd battle-shell
    ```
-2. Get dependencies:  
+2. Build:  
    ```bash
-   go get github.com/rivo/tview
+   go get ./...
+   go build -o battle-shell main.go config.go menu.go tail.go processes.go ui.go utils.go
    ```
-3. Build and run:  
+3. Run:  
    ```bash
-   go build -o battle-shell main.go config.go
    ./battle-shell
    ```
 
@@ -36,52 +46,65 @@ A terminal-based UI to organize and launch your favorite bash commands with menu
 
 ## ⚙️ Configuration
 
-On first run, `config.json` is created:
+On first run, `config.json` is created with defaults:
+
 ```json
 {
   "menu": {
     "title": "Battle Shell",
     "commands": [
       { "name": "List Files", "description": "List files", "command": "ls -l" },
-      …
+      { "name": "Sys Info",  "description": "System info", "command": "uname -a" }
     ],
     "submenus": [
       {
         "title": "Network Tools",
-        "commands": [ … ]
-      },
-      …
+        "commands": [
+          { "name": "Ping Google", "description": "ping google.com", "command": "ping -c3 google.com" }
+        ]
+      }
     ]
-  }
+  },
+  "tail_files": [],
+  "processes": []
 }
 ```
-- **Edit** `config.json` to add or remove commands and sub-menus.  
-- **Restart** the app to load changes.
+
+- **Edit** `config.json` to add/remove `commands`, `submenus`, `tail_files`, or `processes`.  
+- **Restart** the app to apply changes.
 
 ---
 
 ## 🚀 Usage
 
-- **↑/↓** or **j/k** to navigate  
+- **↑/↓** or **j/k** to navigate menus  
+- **1…9,0** to trigger items via auto-shortcuts (works on AZERTY top row)  
 - **Enter** to select  
-- **Tab** to focus the output panel  
-- If a command contains `{arg}`, a form appears to fill in values  
-- Otherwise it runs immediately  
-- **❌ Exit** or press `q` to quit  
-- **⚙ Setup** to change the shell path (e.g. `/bin/zsh`)
+- **Tab** to cycle focus (menu ↔ output ↔ shell input)  
+- **Type** in the shell input panel to run arbitrary bash commands  
+- **Switch tabs** with **F1** (Main), **F2** (Tail), **F3** (Procs)  
+- In **Tail** view, select a file to follow its last lines, auto-refreshing every 2s  
+- In **Procs** view, watchers run in background; names turn green/red on success/failure; select to see last output  
+- **❌ Exit** or press **q** to quit  
 
 ---
 
 ## 💡 Example
 
 Add a command with an argument:
+
 ```json
-{ 
-  "name": "Grep Logs", 
-  "description": "Search logs for pattern", 
-  "command": "grep '{pattern}' *.log" 
+{
+  "menu": {
+    "commands": [
+      {
+        "name": "Search Logs",
+        "description": "grep pattern in logs",
+        "command": "grep '{pattern}' /var/log/*.log"
+      }
+    ]
+  }
 }
 ```
-Select it, enter `pattern`, and see the filtered output.
 
----
+- Select **Search Logs**, enter `pattern`, and view results in the output panel.
