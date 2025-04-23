@@ -21,27 +21,30 @@ func main() {
 
 	/* ────────── shared vars ───────────── */
 	var (
-		rootMenu      tview.Primitive
-		menuPages     *tview.Pages
-		tailView      tview.Primitive
-		procView      tview.Primitive
-		procList      tview.Primitive
-		confPanel     tview.Primitive
-		mainView      tview.Primitive
-		pages         *tview.Pages
-		root          *tview.Flex
-		focusables    []tview.Primitive
-		curFocus      int
-		procEvents    <-chan battleshell.ProcEvent
-		cancelWatchers func()
+		rootMenu        tview.Primitive
+		menuPages       *tview.Pages
+		tailView        tview.Primitive
+		procView        tview.Primitive
+		procList        tview.Primitive
+		confPanel       tview.Primitive
+		mainView        tview.Primitive
+		pages           *tview.Pages
+		root            *tview.Flex
+		focusables      []tview.Primitive
+		curFocus        int
+		procEvents      <-chan battleshell.ProcEvent
+		cancelWatchers  func()
 		reloadEverything func()
+		// zoom state
+		zoomed          bool
+		origRoot        tview.Primitive
 	)
 
 	/* ────────── persistent widgets ────── */
 	output := tview.NewTextArea()
-	output.SetText("", true).
-		SetBorder(true).
+	output.SetBorder(true).
 		SetTitle(" Output ")
+	output.SetText("", true)
 
 	input := tview.NewInputField()
 	input.SetLabel("> ").
@@ -70,20 +73,18 @@ func main() {
 				AddButtons([]string{"OK"}).
 				SetDoneFunc(func(_ int, _ string) {
 					inForm = false
-					// Ferme l'application proprement
 					app.Stop()
 					os.Exit(1)
 				}).
 				SetFocus(0)
 
 			app.SetRoot(modal, true)
-			app.SetFocus(modal)
 			return
 		}
 
 		procEvents, cancelWatchers = battleshell.StartProcessWatchers(cfg.Processes, len(cfg.Processes)*2)
 
-		/* rebuild MAIN page */
+		/* build MAIN page */
 		rootMenu = nil
 		menuPages = tview.NewPages()
 		mainMenu := battleshell.BuildMenu(app, menuPages, cfg.Menu, output, &rootMenu, true, &inForm)
@@ -93,7 +94,7 @@ func main() {
 			AddItem(
 				tview.NewFlex().
 					AddItem(menuPages, 0, 1, true).
-					AddItem(output, 0, 2, false),
+					AddItem(output,    0, 2, false),
 				0, 1, true).
 			AddItem(input, 3, 0, false)
 
@@ -103,10 +104,10 @@ func main() {
 		confPanel = battleshell.NewConfigEditor(app, "config.json", reloadEverything)
 
 		pages = tview.NewPages().
-			AddPage("main", mainView, true, true).
-			AddPage("tails", tailView, true, false).
-			AddPage("proc", procView, true, false).
-			AddPage("conf", confPanel, true, false)
+			AddPage("main", mainView, true,  true).
+			AddPage("tails", tailView, true,  false).
+			AddPage("proc",  procView, true,  false).
+			AddPage("conf",  confPanel, true, false)
 
 		if root == nil {
 			root = tview.NewFlex().SetDirection(tview.FlexRow)
@@ -115,6 +116,11 @@ func main() {
 			AddItem(tabBar, 1, 0, false).
 			AddItem(pages, 0, 1, true).
 			AddItem(footer, 3, 0, false)
+
+		// save unzoomed root once
+		if origRoot == nil {
+			origRoot = root
+		}
 
 		focusables = []tview.Primitive{menuPages, output, input}
 		curFocus = 0
@@ -129,10 +135,28 @@ func main() {
 
 	/* ────────── Global keys ───────────── */
 	app.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if inForm { // laisser TAB interne au form
-			return ev
+		// zoom toggle on Ctrl+Z
+		if ev.Key() == tcell.KeyCtrlZ {
+			if zoomed {
+				// unzoom
+				app.SetRoot(origRoot, true)
+				zoomed = false
+				app.SetFocus(output)
+			} else {
+				// zoom output only (above footer)
+				zoomedView := tview.NewFlex().SetDirection(tview.FlexRow).
+					AddItem(output, 0, 1, true).
+					AddItem(footer, 3, 0, false)
+				app.SetRoot(zoomedView, true)
+				zoomed = true
+				app.SetFocus(output)
+			}
+			return nil
 		}
 
+		if inForm {
+			return ev
+		}
 		switch ev.Key() {
 		case tcell.KeyTab:
 			curFocus = (curFocus + 1) % len(focusables)
