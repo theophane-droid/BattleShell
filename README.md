@@ -1,4 +1,3 @@
-```markdown
 # Battle Shell 🚀
 
 A terminal-based UI to organize and launch your favorite bash commands with menus, sub-menus and dynamic arguments!

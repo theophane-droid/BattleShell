@@ -2,10 +2,12 @@ package main
 
 import (
     "fmt"
+    "io/ioutil"
     "log"
     "os/exec"
     "regexp"
     "strings"
+    "time"
 
     "github.com/gdamore/tcell/v2"
     "github.com/rivo/tview"
@@ -28,12 +30,25 @@ func executeCommand(cmdStr string, output *tview.TextView) {
     }
 }
 
+func readLastLines(path string, n int) ([]byte, error) {
+    data, err := ioutil.ReadFile(path)
+    if err != nil {
+        return nil, err
+    }
+    content := string(data)
+    lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+    if len(lines) <= n {
+        return data, nil
+    }
+    last := lines[len(lines)-n:]
+    return []byte(strings.Join(last, "\n") + "\n"), nil
+}
+
 func buildMenu(app *tview.Application, pages *tview.Pages, cfg MenuConfig, output *tview.TextView, rootMenu *tview.Primitive, isRoot bool) tview.Primitive {
     list := tview.NewList()
-    list.
-        ShowSecondaryText(false).
-        SetBorder(true).
-        SetTitle(" " + cfg.Title + " ")
+    list.ShowSecondaryText(false)
+    list.SetBorder(true)
+    list.SetTitle(" " + cfg.Title + " ")
 
     // Setup
     list.AddItem("⚙ Setup", "Customize shell path", 's', func() {
@@ -47,7 +62,8 @@ func buildMenu(app *tview.Application, pages *tview.Pages, cfg MenuConfig, outpu
                 pages.RemovePage("setup")
                 app.SetFocus(list)
             })
-        form.SetBorder(true).SetTitle(" Setup ")
+        form.SetBorder(true)
+        form.SetTitle(" Setup ")
         pages.AddAndSwitchToPage("setup", form, true)
         app.SetFocus(form)
     })
@@ -59,7 +75,6 @@ func buildMenu(app *tview.Application, pages *tview.Pages, cfg MenuConfig, outpu
             tmpl := cmd.Command
             matches := argRegex.FindAllStringSubmatch(tmpl, -1)
             if len(matches) > 0 {
-                // formulaire pour args
                 names := []string{}
                 seen := map[string]bool{}
                 for _, m := range matches {
@@ -89,7 +104,8 @@ func buildMenu(app *tview.Application, pages *tview.Pages, cfg MenuConfig, outpu
                     pages.RemovePage("args")
                     app.SetFocus(list)
                 })
-                form.SetBorder(true).SetTitle(" Arguments ")
+                form.SetBorder(true)
+                form.SetTitle(" Arguments ")
                 pages.AddAndSwitchToPage("args", form, true)
                 app.SetFocus(form)
                 return
@@ -121,28 +137,53 @@ func buildMenu(app *tview.Application, pages *tview.Pages, cfg MenuConfig, outpu
     return list
 }
 
-func buildTailView(files []string) tview.Primitive {
+func buildTailView(app *tview.Application, files []string, tailTicker **time.Ticker, tailQuit *chan struct{}) tview.Primitive {
     tailList := tview.NewList()
-    tailList.
-        ShowSecondaryText(false).
-        SetBorder(true).
-        SetTitle(" Tails ")
+    tailList.ShowSecondaryText(false)
+    tailList.SetBorder(true)
+    tailList.SetTitle(" Tails ")
     tailOutput := tview.NewTextView().
         SetDynamicColors(true).
         SetScrollable(true).
         SetWrap(true)
-    tailOutput.SetBorder(true).SetTitle(" Tail Output ")
+    tailOutput.SetBorder(true)
+    tailOutput.SetTitle(" Tail Output ")
 
     for _, f := range files {
         file := f
         tailList.AddItem(file, "", 0, func() {
+            if *tailTicker != nil {
+                (*tailTicker).Stop()
+                close(*tailQuit)
+                *tailTicker = nil
+            }
             tailOutput.Clear()
-            // tail last 20 lines
-            out, err := exec.Command("bash", "-c", fmt.Sprintf("tail -n20 %s", file)).CombinedOutput()
+            out, err := readLastLines(file, 20)
             if err != nil {
                 tailOutput.Write([]byte(fmt.Sprintf("Error: %v\n", err)))
             }
             tailOutput.Write(out)
+            quit := make(chan struct{})
+            *tailQuit = quit
+            ticker := time.NewTicker(2 * time.Second)
+            *tailTicker = ticker
+            go func(f string, t *time.Ticker, q chan struct{}) {
+                for {
+                    select {
+                    case <-t.C:
+                        out, err := readLastLines(f, 20)
+                        app.QueueUpdateDraw(func() {
+                            tailOutput.Clear()
+                            if err != nil {
+                                tailOutput.Write([]byte(fmt.Sprintf("Error: %v\n", err)))
+                            }
+                            tailOutput.Write(out)
+                        })
+                    case <-q:
+                        return
+                    }
+                }
+            }(file, ticker, quit)
         })
     }
 
@@ -160,14 +201,12 @@ func main() {
 
     app := tview.NewApplication()
 
-    // Tab bar
     tabs := tview.NewTextView().
         SetDynamicColors(true).
         SetText("[::b][F1] Main[::-]  [::b][F2] Tails[::-]").
         SetTextAlign(tview.AlignCenter)
     tabs.SetBorder(true)
 
-    // MAIN view: menu + output + input
     menuPages := tview.NewPages()
     output := tview.NewTextView().
         SetDynamicColors(true).
@@ -197,23 +236,32 @@ func main() {
             AddItem(output, 0, 2, false), 0, 1, true).
         AddItem(input, 3, 0, false)
 
-    // TAILS view
-    tailView := buildTailView(cfg.TailFiles)
+    var tailTicker *time.Ticker
+    var tailQuit chan struct{}
+    tailView := buildTailView(app, cfg.TailFiles, &tailTicker, &tailQuit)
 
-    // Root pages for tabs
     rootPages := tview.NewPages().
         AddPage("mainView", mainFlex, true, true).
         AddPage("tailView", tailView, true, false)
 
-    // Layout: tab bar on top + rootPages
+    // Footer text
+    footer := tview.NewTextView().
+        SetTextAlign(tview.AlignCenter).
+        SetText("BATTLE SHELL by *droid")
+
     root := tview.NewFlex().SetDirection(tview.FlexRow).
         AddItem(tabs, 1, 0, false).
-        AddItem(rootPages, 0, 1, true)
+        AddItem(rootPages, 0, 1, true).
+        AddItem(footer, 1, 0, false)
 
-    // Keybindings for tab switch
     app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
         switch event.Key() {
         case tcell.KeyF1:
+            if tailTicker != nil {
+                tailTicker.Stop()
+                close(tailQuit)
+                tailTicker = nil
+            }
             rootPages.SwitchToPage("mainView")
             tabs.SetText("[::b][F1] Main[::-]  [F2] Tails")
             app.SetFocus(rootMenu)
