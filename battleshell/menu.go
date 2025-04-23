@@ -1,4 +1,4 @@
-package main
+package battleshell
 
 import (
 	"regexp"
@@ -54,7 +54,7 @@ func BuildMenu(app *tview.Application, pages *tview.Pages, cfg MenuConfig, outpu
 					for k, v := range values {
 						final = strings.ReplaceAll(final, "{"+k+"}", v)
 					}
-					pages.RemovePage("args"); executeCommand(final, output)
+					pages.RemovePage("args"); ExecuteCommand(final, output)
 					app.SetFocus(list)
 				})
 				form.AddButton("Cancel", func() { pages.RemovePage("args"); app.SetFocus(list) })
@@ -63,7 +63,7 @@ func BuildMenu(app *tview.Application, pages *tview.Pages, cfg MenuConfig, outpu
 				app.SetFocus(form)
 				return
 			}
-			executeCommand(tmpl, output)
+			ExecuteCommand(tmpl, output)
 		})
 	}
 

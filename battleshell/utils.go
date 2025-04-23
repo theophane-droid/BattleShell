@@ -1,11 +1,10 @@
-package main
+package battleshell
 
 import (
 	"context"
 	"fmt"
 	"os/exec"
 	"time"
-
 	"github.com/rivo/tview"
 )
 
@@ -15,7 +14,7 @@ var bashPath = "/bin/bash"
 // Helpers
 // ------------------------------------------------------------------
 
-func executeCommand(cmd string, out *tview.TextView) {
+func ExecuteCommand(cmd string, out *tview.TextView) {
 	out.Clear()
 	out.Write([]byte(fmt.Sprintf("$ %s -c \"%s\"\n", bashPath, cmd)))
 
