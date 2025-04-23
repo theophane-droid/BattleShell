@@ -83,10 +83,11 @@ func BuildMenu(app *tview.Application, pages *tview.Pages,
 	}
 
 	list.AddItem("⚙ Setup", "Customize shell path", 's', func() {
+		*inFormFlag = true
 		form := tview.NewForm().
 			AddInputField("Bash path", bashPath, 40, nil, func(text string) { bashPath = text }).
-			AddButton("Save", func() { pages.RemovePage("setup"); app.SetFocus(list) }).
-			AddButton("Cancel", func() { pages.RemovePage("setup"); app.SetFocus(list) })
+			AddButton("Save", func() { pages.RemovePage("setup"); app.SetFocus(list) ; *inFormFlag = false;}).
+			AddButton("Cancel", func() { pages.RemovePage("setup"); app.SetFocus(list) ; *inFormFlag = false; })
 		form.SetBorder(true).SetTitle(" Setup ")
 		pages.AddAndSwitchToPage("setup", form, true)
 		app.SetFocus(form)

@@ -53,7 +53,6 @@ func main() {
 			cmd := input.GetText()
 			input.SetText("")
 			battleshell.ExecuteCommand(cmd, output)
-			app.SetFocus(rootMenu)
 		}
 	})
 
