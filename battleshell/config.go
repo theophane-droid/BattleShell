@@ -6,11 +6,20 @@ import (
 	"os"
 )
 
-// CommandConfig représente une commande bash.
+// SelectActionConfig décrit une action paramétrée sur la ligne sélectionnée.
+type SelectActionConfig struct {
+	Name        string `json:"name"`                  // libellé dans la modale
+	Description string `json:"description,omitempty"` // info secondaire (facultatif)
+	Template    string `json:"template"`              // ex. "docker logs -f {ID}"
+}
+
+// CommandConfig représente une commande bash dans le menu principal.
 type CommandConfig struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Command     string `json:"command"`
+	Name          string               `json:"name"`
+	Description   string               `json:"description"`
+	Command       string               `json:"command"`
+	Fields        []string             `json:"fields,omitempty"`         // noms de colonnes pour {ID},{Image},…
+	SelectActions []SelectActionConfig `json:"select_actions,omitempty"` // zéro ou plusieurs
 }
 
 // MenuConfig représente un menu (avec ses sous-menus).
@@ -41,29 +50,51 @@ func LoadConfig(path string) (*AppConfig, error) {
 			Menu: MenuConfig{
 				Title: "Battle Shell",
 				Commands: []CommandConfig{
-					{"List Files", "List directory", "ls -l"},
-					{"Sys Info", "System info", "uname -a"},
-					{"Net Config", "Network config", "ip a"},
+					{
+						Name:        "List Files",
+						Description: "List directory",
+						Command:     "ls -l",
+					},
+					{
+						Name:        "Sys Info",
+						Description: "System info",
+						Command:     "uname -a",
+					},
+					{
+						Name:        "Net Config",
+						Description: "Network config",
+						Command:     "ip a",
+					},
 				},
 				Submenus: []MenuConfig{
-					{Title: "Network Tools", Commands: []CommandConfig{{"Ping Google", "ping google.com", "ping -c3 google.com"}}},
+					{
+						Title: "Network Tools",
+						Commands: []CommandConfig{
+							{
+								Name:        "Ping Google",
+								Description: "ping google.com",
+								Command:     "ping -c3 google.com",
+							},
+						},
+					},
 				},
 			},
 			TailFiles: []string{},
 			Processes: []ProcessConfig{},
 		}
 		data, _ := json.MarshalIndent(defaultCfg, "", "  ")
-		ioutil.WriteFile(path, data, 0644)
+		_ = ioutil.WriteFile(path, data, 0644)
 		return defaultCfg, nil
 	}
+
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+
 	var cfg AppConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
 }
-

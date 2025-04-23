@@ -1,62 +1,71 @@
 {
   "menu": {
-    "title": "Battle Shell",
+    "title": "Battle Shell – IR Linux",
     "commands": [
-      {
-        "name": "List Files",
-        "description": "Liste les fichiers",
-        "command": "ls -l"
-      },
-      {
-        "name": "Sys Info",
-        "description": "Infos système",
-        "command": "uname -a"
-      },
-      {
-        "name": "Net Config",
-        "description": "Configuration réseau",
-        "command": "ip a"
-      }
+      { "name": "Quick PS",         "description": "All processes (tree)",                "command": "ps -eo pid,ppid,uid,gid,cmd --forest" },
+      { "name": "Top 10 CPU",       "description": "Top CPU-hungry procs",                 "command": "ps -eo pid,comm,pcpu,pmem --sort=-pcpu | head -n 11" },
+      { "name": "Find Susp PID",    "description": "grep in ps output",                    "command": "ps aux | grep '{pattern}'" }
     ],
+
     "submenus": [
+
       {
-        "title": "Network Tools",
+        "title": "Network",
         "commands": [
-          {
-            "name": "Ping Google",
-            "description": "ping google.com",
-            "command": "ping -c3 google.com"
-          },
-          {
-            "name": "Check Port 80",
-            "description": "nc -zv localhost 80",
-            "command": "nc -zv localhost 80"
-          },
-          {
-            "name": "Search for one opened port",
-            "description": "ss -tunlp",
-            "command": "ss -tunlp | grep {port} | grep {port3}"
-          }
-        ],
-        "submenus": null
+          { "name": "Live Connex",  "description": "ss – listening & established",         "command": "ss -tunap" },
+          { "name": "Find Port",    "description": "search a port",                        "command": "ss -tunlp | grep '{port}'" },
+          { "name": "TCP Dump",     "description": "capture if->file (Ctrl-C to stop)",    "command": "tcpdump -ni '{iface}' -w /tmp/cap_{iface}.pcap" }
+        ]
       },
+
       {
-        "title": "File Ops",
+        "title": "Logs & Files",
+        "commands": [
+          { "name": "Syslog tail",  "description": "last 200 syslog lines",                "command": "tail -n200 /var/log/syslog" },
+          { "name": "Auth log",     "description": "suspicious auth lines",                "command": "grep -iE 'fail|invalid' /var/log/auth.log | tail -n40" },
+          { "name": "Find world-w", "description": "world-writable files",                 "command": "find / -xdev -type f -perm -0002 2>/dev/null | head" }
+        ]
+      },
+
+      {
+        "title": "Proc Actions",
+        "commands": [
+          { "name": "Kill PID",     "description": "SIGKILL a pid",                        "command": "sudo kill -9 {pid}" },
+          { "name": "Kill by name", "description": "pkill exact name",                     "command": "sudo pkill -9 '{procname}'" },
+          { "name": "Open files",   "description": "lsof for pid",                         "command": "sudo lsof -p {pid}" }
+        ]
+      },
+
+      {
+        "title": "Docker",
         "commands": [
           {
-            "name": "Temp File",
-            "description": "crée un fichier temporaire",
-            "command": "touch /tmp/temp_file"
+            "name": "List containers",
+            "description": "select a container",
+            "command": "docker ps -a",
+            "fields": ["ID","Image","Names"],
+            "select_actions": [
+              { "name":"Logs","template":"docker logs -f {ID}" },
+              { "name":"Inspect","template":"docker inspect {ID}" }
+            ]
           },
-          {
-            "name": "Last Log",
-            "description": "affiche les 10 dernières lignes du syslog",
-            "command": "tail -n10 /var/log/syslog"
-          }
-        ],
-        "submenus": null
+          { "name": "Exec sh",              "description": "attach to container",          "command": "docker exec -it {container_id} /bin/sh" },
+          { "name": "Stop container",       "description": "docker stop",                  "command": "docker stop {container_id}" },
+          { "name": "Logs container",       "description": "live logs",                    "command": "docker logs -f {container_id}" }
+        ]
       }
     ]
   },
-  "tail_files": ["/home/analyste/lockedshields_25/log"]
+
+  "tail_files": [
+    "/var/log/syslog",
+    "/var/log/auth.log",
+    "/var/lib/docker/containers/{container_id}/*-json.log"
+  ],
+
+  "processes": [
+    { "name": "SSH brute?",  "command": "grep -c 'Failed password' /var/log/auth.log", "interval_seconds": 30 },
+    { "name": "Susp Port 4444", "command": "ss -tunlp | grep 4444", "interval_seconds": 3 },
+    { "name": "Just printing date", "command": "date''", "interval_seconds": 3 }
+  ]
 }

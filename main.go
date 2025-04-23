@@ -75,6 +75,7 @@ func main() {
 		procEvents, cancelWatchers = battleshell.StartProcessWatchers(cfg.Processes, len(cfg.Processes)*2)
 
 		/* rebuild MAIN page */
+		rootMenu = nil
 		menuPages = tview.NewPages()
 		mainMenu  := battleshell.BuildMenu(app, menuPages, cfg.Menu, output, &rootMenu, true, &inForm)
 		menuPages.AddPage("main", mainMenu, true, true)
@@ -168,8 +169,15 @@ func main() {
 	})
 	
 
-	/* run */
-	if err := app.SetRoot(root, true).EnableMouse(false).Run(); err != nil {
+	if root != nil {
+		app.SetRoot(root, true)
+	}
+	if err := app.EnableMouse(false).Run(); err != nil {
 		log.Fatal(err)
 	}
+	
+	/* run */
+	// if err := app.SetRoot(root, true).EnableMouse(false).Run(); err != nil {
+	// 	log.Fatal(err)
+	// }
 }

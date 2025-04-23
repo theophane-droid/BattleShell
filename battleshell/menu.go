@@ -1,30 +1,46 @@
 package battleshell
 
 import (
+	"os/exec"
 	"regexp"
 	"strings"
 
 	"github.com/rivo/tview"
 )
 
-var argRegex = regexp.MustCompile(`\{([^}]+)\}`)
+var argRegex = regexp.MustCompile(`\\{([^}]+)\\}`)
 
-func BuildMenu(app *tview.Application, pages *tview.Pages,
-	cfg MenuConfig, output *tview.TextArea,
-	rootMenu *tview.Primitive, isRoot bool,
-	inFormFlag *bool) tview.Primitive {
+// BuildMenu construit récursivement un menu avec exécution de commandes
+// (simples, à arguments, ou avec SelectActions).
+func BuildMenu(
+	app *tview.Application,
+	pages *tview.Pages,
+	cfg MenuConfig,
+	output *tview.TextArea,
+	rootMenu *tview.Primitive,
+	isRoot bool,
+	inFormFlag *bool,
+) tview.Primitive {
+
+	/* ---------------- liste du menu ---------------- */
 	list := tview.NewList()
 	list.ShowSecondaryText(false).
 		SetBorder(true).
 		SetTitle(" " + cfg.Title + " ")
 
+	if *rootMenu == nil && isRoot {
+		*rootMenu = list
+	}
+
+	/* ------------ raccourcis 1..9 puis 0 ----------- */
 	count := 0
 	nextShortcut := func() rune {
 		if count < 9 {
 			r := rune('1' + count)
 			count++
 			return r
-		} else if count == 9 {
+		}
+		if count == 9 {
 			count++
 			return '0'
 		}
@@ -32,48 +48,142 @@ func BuildMenu(app *tview.Application, pages *tview.Pages,
 		return 0
 	}
 
-	for _, cmd := range cfg.Commands {
-		cmd := cmd
-		sc := nextShortcut()
-		list.AddItem(cmd.Name, cmd.Description, sc, func() {
-			tmpl := cmd.Command
-			matches := argRegex.FindAllStringSubmatch(tmpl, -1)
-			if len(matches) > 0 {
-				names := []string{}
-				seen := map[string]bool{}
-				for _, m := range matches {
-					if !seen[m[1]] {
-						seen[m[1]] = true
-						names = append(names, m[1])
+	/* ---------------- helper run ------------------- */
+	runCmd := func(command string, cmdCfg CommandConfig) {
+		out, _ := exec.Command(bashPath, "-c", command).CombinedOutput()
+		outText := string(out)
+
+		/* ------ pas de SelectActions : texte brut ----- */
+		if len(cmdCfg.SelectActions) == 0 {
+			output.SetText(outText, true)
+			return
+		}
+
+		/* ------ SelectActions : remplacer le menu ----- */
+		lines := strings.Split(strings.TrimSpace(outText), "\n")
+
+		/* sauvegarde du menu courant pour pouvoir revenir */
+		prevPage := "main"
+		pages.HidePage(prevPage)
+
+		lineList := tview.NewList()
+		lineList.ShowSecondaryText(false).
+			SetBorder(true).
+			SetTitle(" Select line ")
+
+		/* items des lignes */
+		for _, l := range lines {
+			line := l // capture
+			display := line
+			if len(display) > 100 {
+				display = display[:100]
+			}
+			lineList.AddItem(display, "", 0, func() {
+				fields := strings.Fields(line)
+				vals := map[string]string{}
+				for i, f := range cmdCfg.Fields {
+					if i < len(fields) {
+						vals[f] = fields[i]
 					}
 				}
-				values := map[string]string{}
+
+				/* ---------------- modal ------------------ */
+				btns := make([]string, len(cmdCfg.SelectActions))
+				for i, a := range cmdCfg.SelectActions {
+					btns[i] = a.Name
+				}
+				btns = append(btns, "Back")
+
+				modal := tview.NewModal().
+					SetText("Choose action for:\n" + display).
+					AddButtons(btns).
+					SetDoneFunc(func(ix int, label string) {
+						app.SetFocus(lineList)
+						pages.RemovePage("actions_modal")
+
+						/* Back */
+						if label == "Back" || ix >= len(cmdCfg.SelectActions) {
+							return
+						}
+
+						act := cmdCfg.SelectActions[ix]
+						final := act.Template
+						for k, v := range vals {
+							final = strings.ReplaceAll(final, "{"+k+"}", v)
+						}
+						output.SetText("", true)
+						ExecuteCommand(final, output)
+					})
+
+				pages.AddPage("actions_modal", modal, true, true)
+			})
+		}
+
+		/* bouton retour vers le menu principal */
+		lineList.AddItem("← Back to menu", "", 'b', func() {
+			pages.RemovePage("line_selector")
+			pages.ShowPage(prevPage)
+			app.SetFocus(list)
+		})
+
+		pages.AddPage("line_selector", lineList, true, true)
+		app.SetFocus(lineList)
+	}
+
+	/* ------------- commandes principales ------------ */
+	for _, c := range cfg.Commands {
+		cmd := c
+		sc := nextShortcut()
+
+		list.AddItem(cmd.Name, cmd.Description, sc, func() {
+			tmpl := cmd.Command
+
+			/* ---- arguments positionnels ? ---- */
+			if m := argRegex.FindAllStringSubmatch(tmpl, -1); len(m) > 0 {
+				seen := map[string]bool{}
+				var names []string
+				for _, s := range m {
+					if !seen[s[1]] {
+						seen[s[1]] = true
+						names = append(names, s[1])
+					}
+				}
+				vals := map[string]string{}
 				form := tview.NewForm()
 				for _, n := range names {
-					form.AddInputField(n, "", 20, nil, func(text string) { values[n] = text })
+					n := n
+					form.AddInputField(n, "", 20, nil, func(t string) { vals[n] = t })
 				}
 				form.AddButton("Run", func() {
 					final := tmpl
-					for k, v := range values {
+					for k, v := range vals {
 						final = strings.ReplaceAll(final, "{"+k+"}", v)
 					}
-					pages.RemovePage("args"); ExecuteCommand(final, output)
-					*inFormFlag = false
 					app.SetFocus(list)
+					pages.RemovePage("args")
+					*inFormFlag = false
+					runCmd(final, cmd)
 				})
-				form.AddButton("Cancel", func() { pages.RemovePage("args"); app.SetFocus(list); *inFormFlag = false })
+				form.AddButton("Cancel", func() {
+					app.SetFocus(list)
+					pages.RemovePage("args")
+					*inFormFlag = false
+				})
 				form.SetBorder(true).SetTitle(" Arguments ")
 				*inFormFlag = true
 				pages.AddAndSwitchToPage("args", form, true)
 				app.SetFocus(form)
 				return
 			}
-			ExecuteCommand(tmpl, output)
+
+			/* -------- exécution directe -------- */
+			runCmd(tmpl, cmd)
 		})
 	}
 
-	for _, sub := range cfg.Submenus {
-		sub := sub
+	/* ---------------- sous-menus ------------------ */
+	for _, sm := range cfg.Submenus {
+		sub := sm
 		sc := nextShortcut()
 		list.AddItem(sub.Title, "", sc, func() {
 			submenu := BuildMenu(app, pages, sub, output, rootMenu, false, inFormFlag)
@@ -82,22 +192,35 @@ func BuildMenu(app *tview.Application, pages *tview.Pages,
 		})
 	}
 
+	/* ---------------- Setup ---------------------- */
 	list.AddItem("⚙ Setup", "Customize shell path", 's', func() {
 		*inFormFlag = true
 		form := tview.NewForm().
-			AddInputField("Bash path", bashPath, 40, nil, func(text string) { bashPath = text }).
-			AddButton("Save", func() { pages.RemovePage("setup"); app.SetFocus(list) ; *inFormFlag = false;}).
-			AddButton("Cancel", func() { pages.RemovePage("setup"); app.SetFocus(list) ; *inFormFlag = false; })
+			AddInputField("Bash path", bashPath, 40, nil, func(t string) { bashPath = t }).
+			AddButton("Save", func() {
+				app.SetFocus(list)
+				pages.RemovePage("setup")
+				*inFormFlag = false
+			}).
+			AddButton("Cancel", func() {
+				app.SetFocus(list)
+				pages.RemovePage("setup")
+				*inFormFlag = false
+			})
 		form.SetBorder(true).SetTitle(" Setup ")
 		pages.AddAndSwitchToPage("setup", form, true)
 		app.SetFocus(form)
 	})
 
+	/* ------------- Quit / Back ------------------- */
 	if isRoot {
 		list.AddItem("❌ Exit", "Quit", 'q', func() { app.Stop() })
-		*rootMenu = list
 	} else {
-		list.AddItem("🔙 Back", "Go back", 'b', func() { pages.SwitchToPage("main"); app.SetFocus(*rootMenu) })
+		list.AddItem("🔙 Back", "Go back", 'b', func() {
+			app.SetFocus(*rootMenu)
+			pages.SwitchToPage("main")
+		})
 	}
+
 	return list
 }
